@@ -172,16 +172,6 @@ stdin/file ──read──>│ parser (JSON/logfmt/plain)    │
                     └──────────────────────────────┘
 ```
 
-## Recording a demo GIF
-
-```bash
-# Install vhs: https://github.com/charmbracelet/vhs
-brew install vhs
-
-# Record
-vhs demo.tape
-```
-
 ## Roadmap
 
 - [x] Batch processing for large files
