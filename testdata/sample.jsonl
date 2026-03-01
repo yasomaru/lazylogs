@@ -1,0 +1,13 @@
+{"level":"info","msg":"server starting","time":"2025-03-01T10:00:00Z","port":8080}
+{"level":"info","msg":"database connected","time":"2025-03-01T10:00:01Z","host":"localhost","db":"myapp"}
+{"level":"debug","msg":"loading config","time":"2025-03-01T10:00:01Z","file":"/etc/app/config.yaml"}
+{"level":"info","msg":"listening on :8080","time":"2025-03-01T10:00:02Z"}
+{"level":"warn","msg":"slow query detected","time":"2025-03-01T10:00:05Z","duration":"2.3s","query":"SELECT * FROM users"}
+{"level":"info","msg":"request completed","time":"2025-03-01T10:00:06Z","method":"GET","path":"/api/users","status":200,"latency":"45ms"}
+{"level":"info","msg":"request completed","time":"2025-03-01T10:00:07Z","method":"POST","path":"/api/orders","status":201,"latency":"120ms"}
+{"level":"error","msg":"failed to process payment","time":"2025-03-01T10:00:08Z","order_id":"ord-123","error":"timeout connecting to payment gateway"}
+{"level":"warn","msg":"retry attempt","time":"2025-03-01T10:00:09Z","attempt":2,"max_retries":3}
+{"level":"info","msg":"payment processed","time":"2025-03-01T10:00:10Z","order_id":"ord-123","amount":99.99}
+{"level":"debug","msg":"cache hit","time":"2025-03-01T10:00:11Z","key":"user:456","ttl":"300s"}
+{"level":"error","msg":"connection refused","time":"2025-03-01T10:00:15Z","service":"email","host":"smtp.example.com:587"}
+{"level":"fatal","msg":"out of memory","time":"2025-03-01T10:00:20Z","allocated":"4GB","limit":"4GB"}

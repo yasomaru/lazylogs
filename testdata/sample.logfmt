@@ -1,0 +1,6 @@
+ts=2025-03-01T10:00:00Z level=info msg="server starting" port=8080
+ts=2025-03-01T10:00:01Z level=info msg="database connected" host=localhost db=myapp
+ts=2025-03-01T10:00:02Z level=debug msg="loading config" file=/etc/app/config.yaml
+ts=2025-03-01T10:00:05Z level=warn msg="slow query" duration=2.3s
+ts=2025-03-01T10:00:08Z level=error msg="payment failed" order_id=ord-123 error="timeout"
+ts=2025-03-01T10:00:20Z level=fatal msg="out of memory" allocated=4GB limit=4GB
