@@ -47,8 +47,7 @@ type Model struct {
 	done      bool
 
 	// Error display.
-	errorMsg    string
-	errorExpiry time.Time
+	errorMsg string
 
 	// Components.
 	searchInput textinput.Model
