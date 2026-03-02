@@ -1,22 +1,32 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/syasoda/lazylogs/internal/entry"
 	"github.com/syasoda/lazylogs/internal/tui"
 )
 
+var version = "dev"
+
 func main() {
 	var columns string
+	var showVersion bool
+	var followFile bool
 
 	flag.StringVar(&columns, "columns", "", "comma-separated columns (e.g. time,level,msg,status,latency)")
 	flag.StringVar(&columns, "c", "", "comma-separated columns (shorthand)")
+	flag.BoolVar(&showVersion, "version", false, "print version and exit")
+	flag.BoolVar(&showVersion, "v", false, "print version (shorthand)")
+	flag.BoolVar(&followFile, "f", false, "follow file for new data (like tail -f)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `lazylogs - TUI structured log viewer
 
@@ -27,6 +37,8 @@ Usage:
 Flags:
   -c, --columns string   comma-separated columns for table display
                           (e.g. time,level,msg,status,latency)
+  -f                     follow file (like tail -f)
+  -v, --version          print version and exit
 
 Supported formats:
   JSON Lines   {"level":"info","msg":"hello","time":"..."}
@@ -36,7 +48,7 @@ Supported formats:
 Keys:
   j/k, ↑/↓    scroll
   enter        detail view
-  /            search
+  /            search (supports regex)
   t            time range filter
   1            toggle error/fatal
   2            toggle warn
@@ -49,6 +61,7 @@ Keys:
 
 Examples:
   lazylogs app.log
+  lazylogs -f app.log
   lazylogs --columns time,level,msg,status,latency app.log
   cat app.log | lazylogs
   kubectl logs -f pod | lazylogs
@@ -57,7 +70,16 @@ Examples:
 	}
 	flag.Parse()
 
+	if showVersion {
+		fmt.Printf("lazylogs %s\n", version)
+		os.Exit(0)
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	var reader io.Reader
+	var fileForTail *os.File
 	var ttyInput *os.File
 
 	if flag.NArg() > 0 {
@@ -67,18 +89,22 @@ Examples:
 			os.Exit(1)
 		}
 		defer f.Close()
-		reader = f
+		if followFile {
+			fileForTail = f
+		} else {
+			reader = f
+		}
 	} else {
-		stat, _ := os.Stdin.Stat()
-		if stat.Mode()&os.ModeCharDevice != 0 {
+		stat, err := os.Stdin.Stat()
+		if err != nil || stat.Mode()&os.ModeCharDevice != 0 {
 			flag.Usage()
 			os.Exit(2)
 		}
 		reader = os.Stdin
-		var err error
-		ttyInput, err = os.Open("/dev/tty")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: cannot open /dev/tty: %v\n", err)
+		var ttyErr error
+		ttyInput, ttyErr = os.Open("/dev/tty")
+		if ttyErr != nil {
+			fmt.Fprintf(os.Stderr, "error: cannot open /dev/tty: %v\n", ttyErr)
 			os.Exit(1)
 		}
 		defer ttyInput.Close()
@@ -95,7 +121,11 @@ Examples:
 	}
 
 	ch := make(chan entry.Entry, 4096)
-	go entry.ReadLines(reader, ch)
+	if fileForTail != nil {
+		go entry.ReadLinesTail(ctx, fileForTail, ch)
+	} else {
+		go entry.ReadLines(ctx, reader, ch)
+	}
 
 	model := tui.NewModel(ch, cols)
 

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"time"
 
@@ -8,6 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/syasoda/lazylogs/internal/entry"
 )
+
+const maxEntries = 100_000
 
 type viewMode int
 
@@ -29,10 +32,11 @@ type Model struct {
 	height   int
 
 	// Filters.
-	search   string
-	levels   map[entry.Level]bool
-	timeFrom time.Time
-	timeTo   time.Time
+	search      string
+	searchRegex *regexp.Regexp
+	levels      map[entry.Level]bool
+	timeFrom    time.Time
+	timeTo      time.Time
 
 	// Display.
 	columns []string // empty = default, non-empty = table mode
@@ -41,6 +45,10 @@ type Model struct {
 	mode      viewMode
 	following bool
 	done      bool
+
+	// Error display.
+	errorMsg    string
+	errorExpiry time.Time
 
 	// Components.
 	searchInput textinput.Model
@@ -51,7 +59,7 @@ type Model struct {
 // NewModel creates a new lazylogs TUI model.
 func NewModel(ch <-chan entry.Entry, columns []string) *Model {
 	si := textinput.New()
-	si.Placeholder = "search..."
+	si.Placeholder = "search (regex supported)..."
 	si.CharLimit = 256
 
 	ti := textinput.New()
@@ -82,6 +90,7 @@ func NewModel(ch <-chan entry.Entry, columns []string) *Model {
 
 type batchMsg []entry.Entry
 type entriesDoneMsg struct{}
+type clearErrorMsg struct{}
 
 func readBatch(ch <-chan entry.Entry) tea.Cmd {
 	return func() tea.Msg {
@@ -111,6 +120,12 @@ func readBatch(ch <-chan entry.Entry) tea.Cmd {
 	}
 }
 
+func clearErrorAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg {
+		return clearErrorMsg{}
+	})
+}
+
 func (m *Model) Init() tea.Cmd {
 	return readBatch(m.entryChan)
 }
@@ -128,7 +143,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		startIdx := len(m.entries)
 		m.entries = append(m.entries, []entry.Entry(msg)...)
-		m.filterRange(startIdx)
+
+		// Memory cap: drop oldest entries if over limit.
+		if len(m.entries) > maxEntries {
+			m.entries = m.entries[len(m.entries)-maxEntries:]
+			m.refilter()
+			m.clampCursor()
+		} else {
+			m.filterRange(startIdx)
+		}
+
 		if m.following {
 			m.scrollToBottom()
 		}
@@ -136,6 +160,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case entriesDoneMsg:
 		m.done = true
+		return m, nil
+
+	case clearErrorMsg:
+		m.errorMsg = ""
 		return m, nil
 
 	case tea.KeyMsg:
@@ -150,7 +178,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeSearch {
 		switch msg.String() {
 		case "enter":
-			m.search = m.searchInput.Value()
+			m.setSearch(m.searchInput.Value())
 			m.mode = modeList
 			m.refilter()
 			m.cursor = 0
@@ -170,9 +198,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeTimeCustom {
 		switch msg.String() {
 		case "enter":
-			m.applyCustomTimeFilter(m.timeInput.Value())
+			cmd := m.applyCustomTimeFilter(m.timeInput.Value())
 			m.mode = modeList
-			return m, nil
+			return m, cmd
 		case "esc":
 			m.mode = modeList
 			return m, nil
@@ -292,6 +320,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.search != "" {
 			m.search = ""
+			m.searchRegex = nil
 			m.refilter()
 			m.cursor = 0
 			m.offset = 0
@@ -315,6 +344,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// --- Search ---
+
+func (m *Model) setSearch(s string) {
+	m.search = s
+	m.searchRegex = nil
+	if s == "" {
+		return
+	}
+	// Try to compile as regex; fall back to literal on failure.
+	if re, err := regexp.Compile("(?i)" + s); err == nil {
+		m.searchRegex = re
+	}
+}
+
 // --- Time filter ---
 
 func (m *Model) applyRelativeTimeFilter(d time.Duration) {
@@ -328,10 +371,10 @@ func (m *Model) applyRelativeTimeFilter(d time.Duration) {
 	m.clampCursor()
 }
 
-func (m *Model) applyCustomTimeFilter(input string) {
+func (m *Model) applyCustomTimeFilter(input string) tea.Cmd {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return
+		return nil
 	}
 
 	parts := strings.SplitN(input, "-", 2)
@@ -343,14 +386,16 @@ func (m *Model) applyCustomTimeFilter(input string) {
 
 	from, ok := parseTimeOfDay(parts[0], base)
 	if !ok {
-		return
+		m.errorMsg = "invalid time format (use HH:MM or HH:MM:SS)"
+		return clearErrorAfter(3 * time.Second)
 	}
 	m.timeFrom = from
 
 	if len(parts) == 2 {
 		to, ok := parseTimeOfDay(parts[1], base)
 		if !ok {
-			return
+			m.errorMsg = "invalid end time (use HH:MM or HH:MM:SS)"
+			return clearErrorAfter(3 * time.Second)
 		}
 		m.timeTo = to
 	} else {
@@ -359,6 +404,7 @@ func (m *Model) applyCustomTimeFilter(input string) {
 
 	m.refilter()
 	m.clampCursor()
+	return nil
 }
 
 func parseTimeOfDay(s string, base time.Time) (time.Time, bool) {
@@ -423,8 +469,14 @@ func (m *Model) matchesFilter(e entry.Entry, search string) bool {
 	if !m.levels[e.Level] {
 		return false
 	}
-	if search != "" && !strings.Contains(strings.ToLower(e.Raw), search) {
-		return false
+	if search != "" {
+		if m.searchRegex != nil {
+			if !m.searchRegex.MatchString(e.Raw) {
+				return false
+			}
+		} else if !strings.Contains(strings.ToLower(e.Raw), search) {
+			return false
+		}
 	}
 	if !m.timeFrom.IsZero() && !e.Timestamp.IsZero() && e.Timestamp.Before(m.timeFrom) {
 		return false

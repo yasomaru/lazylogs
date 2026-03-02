@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/syasoda/lazylogs/internal/entry"
 )
 
@@ -54,7 +55,7 @@ func (m *Model) viewList() string {
 		}
 
 		if lipgloss.Width(line) > m.width {
-			line = truncate(line, m.width)
+			line = lipgloss.NewStyle().MaxWidth(m.width).Render(line)
 		}
 
 		if idx == m.cursor {
@@ -120,9 +121,6 @@ func (m *Model) renderColumnHeader() string {
 	for i, col := range m.columns {
 		w := widths[i]
 		header := strings.ToUpper(col)
-		if len(header) > w {
-			header = header[:w]
-		}
 		parts = append(parts, styleColHeader.Render(padRight(header, w)))
 	}
 	return strings.Join(parts, " ")
@@ -157,9 +155,6 @@ func (m *Model) formatColumns(e entry.Entry) string {
 		}
 
 		cell := padRight(val, w)
-		if len(cell) > w {
-			cell = cell[:w]
-		}
 		parts = append(parts, style.Render(cell))
 	}
 
@@ -316,6 +311,11 @@ func (m *Model) viewStatusBar() string {
 		left += " loading..."
 	}
 
+	// Show error message if present.
+	if m.errorMsg != "" {
+		left += " " + styleErrorMsg.Render(m.errorMsg)
+	}
+
 	var right []string
 	if m.search != "" {
 		right = append(right, fmt.Sprintf("search:%q", m.search))
@@ -358,7 +358,7 @@ func (m *Model) viewStatusBar() string {
 		rightStr = strings.Join(right, " | ") + " "
 	}
 
-	pad := m.width - len(left) - len(rightStr)
+	pad := m.width - lipgloss.Width(left) - lipgloss.Width(rightStr)
 	if pad < 1 {
 		pad = 1
 	}
@@ -388,23 +388,11 @@ func (m *Model) viewHelp() string {
 
 // --- Helpers ---
 
+// padRight pads a string to width w using display width (handles CJK, emoji).
 func padRight(s string, w int) string {
-	if len(s) >= w {
-		return s[:w]
+	sw := runewidth.StringWidth(s)
+	if sw >= w {
+		return runewidth.Truncate(s, w, "")
 	}
-	return s + strings.Repeat(" ", w-len(s))
-}
-
-func truncate(s string, maxWidth int) string {
-	if maxWidth <= 3 {
-		return s[:maxWidth]
-	}
-	w := 0
-	for i := range s {
-		w++
-		if w > maxWidth-3 {
-			return s[:i] + "..."
-		}
-	}
-	return s
+	return s + strings.Repeat(" ", w-sw)
 }

@@ -23,6 +23,7 @@ var (
 	styleTitle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#CCCCFF"))
 	styleColHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#AAAADD")).Underline(true)
 	styleTimePrompt = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFCC55")).Bold(true)
+	styleErrorMsg   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true)
 )
 
 func levelStyle(l entry.Level) lipgloss.Style {
