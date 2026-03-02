@@ -177,8 +177,8 @@ stdin/file ──read──>│ parser (JSON/logfmt/plain)    │
 - [x] Batch processing for large files
 - [x] Time range filtering
 - [x] Custom column display
-- [ ] Tail mode for files (`lazylogs -f app.log`)
-- [ ] Regex search
+- [x] Tail mode for files (`lazylogs -f app.log`)
+- [x] Regex search
 - [ ] Export filtered results to file
 - [ ] Themes / color customization
 - [ ] Windows support
